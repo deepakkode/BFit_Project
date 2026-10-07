@@ -15,6 +15,37 @@ const MAXIMUM_DAILY_STEP_GOAL = 12000;
 const BASELINE_DAYS = 7;
 const MINIMUM_BASELINE_DAYS = 3;
 
+function clampDailyGoal(value) {
+  return Math.max(MINIMUM_DAILY_STEP_GOAL, Math.min(MAXIMUM_DAILY_STEP_GOAL, Math.round(Number(value) || STARTER_DAILY_STEP_GOAL)));
+}
+
+function getProfileMultiplier(profile = {}) {
+  const age = Number(profile.age) || 30;
+  const heightCm = Number(profile.height_cm) || 170;
+  const weightKg = Number(profile.weight_kg) || 70;
+  const normalizedGender = String(profile.gender || '').trim().toLowerCase();
+
+  const genderFactor = normalizedGender === 'male' ? 1.03
+    : normalizedGender === 'female' ? 0.97
+    : 1.0;
+
+  const ageFactor = age < 18 ? 1.12
+    : age <= 25 ? 1.08
+    : age <= 45 ? 1.0
+    : age <= 60 ? 0.9
+    : 0.8;
+
+  const heightMeters = Math.max(heightCm / 100, 1.2);
+  const bmi = weightKg / (heightMeters * heightMeters);
+  const heightFactor = Math.max(0.94, Math.min(1.06, heightCm / 170));
+  const bmiFactor = bmi < 18.5 ? 0.9
+    : bmi <= 25 ? 1.0
+    : bmi <= 30 ? 0.95
+    : 0.88;
+
+  return genderFactor * ageFactor * heightFactor * bmiFactor;
+}
+
 export function estimateWalkingMetrics(steps, profile = {}) {
   const safeSteps = Math.max(0, Number(steps) || 0);
   const heightCm = Number(profile.height_cm) || 170;
@@ -28,7 +59,11 @@ export function estimateWalkingMetrics(steps, profile = {}) {
   };
 }
 
-export function getStepGoalRecommendation(stepHistory = [], now = new Date()) {
+export function getDisplayActivityName(activity) {
+  return activity === 'Sitting' || activity === 'Standing' ? 'Rest' : activity;
+}
+
+export function getStepGoalRecommendation(stepHistory = [], now = new Date(), profile = {}) {
   const today = now.toISOString().slice(0, 10);
   const firstDay = new Date(now);
   firstDay.setUTCDate(firstDay.getUTCDate() - (BASELINE_DAYS - 1));
@@ -42,18 +77,21 @@ export function getStepGoalRecommendation(stepHistory = [], now = new Date()) {
     ? trackedDays.reduce((total, row) => total + Number(row.steps), 0) / trackedDays.length
     : 0;
 
+  const profileMultiplier = getProfileMultiplier(profile);
+  const starterTarget = clampDailyGoal(Math.round((STARTER_DAILY_STEP_GOAL * profileMultiplier) / 500) * 500);
+
   if (trackedDays.length < MINIMUM_BASELINE_DAYS) {
     return {
-      dailyStepGoal: STARTER_DAILY_STEP_GOAL,
+      dailyStepGoal: starterTarget,
       averageSteps: Math.round(averageSteps),
       sampleDays: trackedDays.length,
       isPersonalized: false,
     };
   }
 
-  const gradualTarget = Math.round((averageSteps * 1.1) / 500) * 500;
+  const gradualTarget = Math.round((averageSteps * 1.1) * profileMultiplier / 500) * 500;
   return {
-    dailyStepGoal: Math.max(MINIMUM_DAILY_STEP_GOAL, Math.min(MAXIMUM_DAILY_STEP_GOAL, gradualTarget)),
+    dailyStepGoal: clampDailyGoal(gradualTarget),
     averageSteps: Math.round(averageSteps),
     sampleDays: trackedDays.length,
     isPersonalized: true,

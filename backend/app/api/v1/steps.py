@@ -6,7 +6,7 @@ from sqlalchemy.dialects.postgresql import insert
 from app.api.deps import CurrentUser, DbSession
 from app.models.entities import StepLog, new_id
 from app.repositories.steps import get_step_log, step_history
-from app.schemas.contracts import StepRead, StepUpdate
+from app.schemas.contracts import StepRead, StepTodayRead, StepUpdate
 from app.services.summaries import refresh_daily_summary
 
 router = APIRouter()
@@ -27,11 +27,18 @@ def update_steps(payload: StepUpdate, db: DbSession, user: CurrentUser) -> StepL
     return row
 
 
-@router.get("/today")
+@router.get("/today", response_model=StepTodayRead)
 def today_steps(db: DbSession, user: CurrentUser) -> dict:
     today = datetime.now(timezone.utc).date()
     row = get_step_log(db, user.id, today)
-    return row if row else {"log_date": today, "steps": 0, "distance_km": 0, "calories_burned": 0}
+    if row:
+        return {
+            "log_date": row.log_date,
+            "steps": row.steps,
+            "distance_km": row.distance_km,
+            "calories_burned": row.calories_burned,
+        }
+    return {"log_date": today, "steps": 0, "distance_km": 0, "calories_burned": 0}
 
 
 @router.get("/history", response_model=list[StepRead])

@@ -14,8 +14,8 @@ import { useAppStore } from './src/store';
 import { useActivitySensors } from './src/sensors';
 import { clearAccessToken, getAccessToken, setAccessToken } from './src/tokenStorage';
 import { getLastQuoteIndex, setLastQuoteIndex } from './src/quoteStorage';
-import { estimateWalkingMetrics, getActivityReadingStatus, getGoalSummary, getNextQuoteIndex, getStepGoalRecommendation, MOTIVATIONAL_QUOTES, STARTER_DAILY_STEP_GOAL } from './src/wellnessMetrics.mjs';
-import { cancelMovementReminder, getMovementReminderSettings, scheduleMovementReminder } from './src/reminders';
+import { estimateWalkingMetrics, getActivityReadingStatus, getDisplayActivityName, getGoalSummary, getNextQuoteIndex, getStepGoalRecommendation, MOTIVATIONAL_QUOTES, STARTER_DAILY_STEP_GOAL } from './src/wellnessMetrics.mjs';
+import { cancelMovementReminder, configureMovementNotifications, getMovementReminderSettings, scheduleMovementReminder } from './src/reminders';
 import { BrandMark, brandColors } from './src/BrandMark';
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30000 } } });
@@ -64,6 +64,7 @@ function AuthScreen() {
   const [age, setAge] = useState('');
   const [height, setHeight] = useState('');
   const [weight, setWeight] = useState('');
+  const [gender, setGender] = useState('');
   const [error, setError] = useState('');
   const setUser = useAppStore((state) => state.setUser);
   const client = useQueryClient();
@@ -78,6 +79,7 @@ function AuthScreen() {
           age: age ? Number(age) : null,
           height_cm: height ? Number(height) : null,
           weight_kg: weight ? Number(weight) : null,
+          gender: gender || null,
         });
       }
       return authApi.login({ email: email.trim(), password });
@@ -92,7 +94,7 @@ function AuthScreen() {
       const detail = cause.response?.data?.detail;
       setError(detail
         ? typeof detail === 'string' ? detail : JSON.stringify(detail)
-        : `Can't reach ${API_BASE_URL}. For a phone, set EXPO_PUBLIC_API_URL to this PC's current Wi-Fi IPv4 in mobile/.env, then restart Expo with npm run start:lan.`);
+        : `Couldn't reach ${API_BASE_URL}. Check that your phone has internet access. If the free Render server was idle, wait about a minute for it to wake up, then try again.`);
     },
   });
 
@@ -113,12 +115,15 @@ function AuthScreen() {
       <Field label="EMAIL" value={email} onChangeText={setEmail} placeholder="you@example.com" keyboardType="email-address" autoCapitalize="none" colors={colors} />
       <Field label="PASSWORD" value={password} onChangeText={setPassword} placeholder="At least 8 characters" secureTextEntry colors={colors} />
       {isRegister && (
-        <View style={styles.fieldRow}>
-          <Field label="AGE" value={age} onChangeText={setAge} keyboardType="numeric" containerStyle={styles.fieldCompact} colors={colors} />
-          <Field label="HEIGHT (cm)" value={height} onChangeText={setHeight} keyboardType="numeric" containerStyle={styles.fieldCompact} colors={colors} />
-        </View>
+        <>
+          <View style={styles.fieldRow}>
+            <Field label="AGE" value={age} onChangeText={setAge} keyboardType="numeric" containerStyle={styles.fieldCompact} colors={colors} />
+            <Field label="HEIGHT (cm)" value={height} onChangeText={setHeight} keyboardType="numeric" containerStyle={styles.fieldCompact} colors={colors} />
+          </View>
+          <Field label="WEIGHT (kg)" value={weight} onChangeText={setWeight} keyboardType="numeric" colors={colors} />
+          <GenderPicker value={gender} onChange={setGender} colors={colors} />
+        </>
       )}
-      {isRegister && <Field label="WEIGHT (kg)" value={weight} onChangeText={setWeight} keyboardType="numeric" colors={colors} />}
       {error ? <Text style={{ color: colors.red, marginTop: 12 }}>{error}</Text> : null}
       <Pressable
         accessibilityRole="button"
@@ -144,6 +149,35 @@ function Field({ label, colors, containerStyle, ...props }) {
   );
 }
 
+function GenderPicker({ value, onChange, colors }) {
+  return (
+    <View style={styles.genderPicker}>
+      {['Female', 'Male', 'Other', 'Prefer not to say'].map((option) => {
+        const selected = value === option;
+        return (
+          <Pressable
+            key={option}
+            accessibilityRole="radio"
+            accessibilityState={{ selected }}
+            onPress={() => onChange(option)}
+            style={[
+              styles.genderOption,
+              {
+                borderColor: selected ? colors.accent : colors.line,
+                backgroundColor: selected ? colors.hero : colors.panel,
+              },
+            ]}
+          >
+            <Text style={{ color: selected ? colors.accent : colors.text, fontWeight: '700' }}>
+              {selected ? '✓  ' : ''}{option}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function HomeScreen() {
   const colors = useColors();
   const user = useAppStore((state) => state.user);
@@ -156,7 +190,7 @@ function HomeScreen() {
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalsApi.get });
   const pedometerStatus = useActivitySensors(true, user, permissionRefreshToken);
   const stepPermissionRequired = pedometerStatus.includes('Allow physical activity access');
-  const recommendation = getStepGoalRecommendation(stepHistory.data || []);
+  const recommendation = getStepGoalRecommendation(stepHistory.data || [], new Date(), user || {});
 
   const errorMessage = current.error?.response?.data?.detail || 'Connect to the BFit API to start tracking.';
   const stepCount = steps.data?.steps || 0;
@@ -203,7 +237,7 @@ function HomeScreen() {
       </Panel>
       <View style={[styles.activityPanel, { backgroundColor: colors.hero }]}>
         <View style={styles.activityTop}><Text style={[styles.heroEyebrow, { color: colors.heroMuted }]}>LATEST DETECTION</Text><View style={[styles.liveDot, { backgroundColor: detectionIsStale ? colors.orange : colors.heroAccent }]} /><Text style={[styles.heroLive, { color: detectionIsStale ? colors.orange : colors.heroAccent }]}>{detectionIsStale ? 'STALE' : 'MODEL'}</Text></View>
-        <Text style={[styles.activityName, { color: colors.heroAccent }]}>{current.data?.activity || (current.isLoading ? 'Listening…' : 'Ready when you are')}</Text>
+        <Text style={[styles.activityName, { color: colors.heroAccent }]}>{current.data?.activity ? getDisplayActivityName(current.data.activity) : current.isLoading ? 'Listening…' : 'Ready when you are'}</Text>
         <View style={styles.activityFooter}>
           <Text style={{ color: colors.heroMuted }}>{activityNote}</Text>
           <Text style={[styles.heroArrow, { color: colors.heroAccent }]}>↗</Text>
@@ -226,16 +260,18 @@ function HomeScreen() {
         </Pressable>
       )}
       <View style={styles.sectionHeading}><Title style={styles.sectionTitle}>Movement mix</Title><Label>TODAY</Label></View>
-      {today.isLoading ? <Loading colors={colors} /> : today.isError ? <InlineError text="Today's activity is not available yet." colors={colors} /> : (
+      {today.isLoading ? <Loading colors={colors} /> : today.isError ? <InlineError text={getApiErrorMessage(today.error, "Today's activity is not available yet.")} colors={colors} /> : (
         <View style={styles.activityList}>
-          {['Walking', 'Running', 'Sitting', 'Standing'].map((activity, index) => {
-            const seconds = today.data?.duration_seconds?.[activity] || 0;
-            const activityColor = [colors.accent, colors.orange, colors.muted, '#88A998'][index];
+          {[
+            { activity: 'Walking', seconds: today.data?.duration_seconds?.Walking || 0, color: colors.accent },
+            { activity: 'Running', seconds: today.data?.duration_seconds?.Running || 0, color: colors.orange },
+            { activity: 'Rest', seconds: (today.data?.duration_seconds?.Sitting || 0) + (today.data?.duration_seconds?.Standing || 0), color: colors.muted },
+          ].map(({ activity, seconds, color: activityColor }) => {
             return <View key={activity} style={[styles.activityRow, { borderBottomColor: colors.line }]}><View style={[styles.activityDot, { backgroundColor: activityColor }]} /><Text style={[styles.activityLabel, { color: colors.text }]}>{activity}</Text><View style={styles.activityDuration}><View style={[styles.activityMiniTrack, { backgroundColor: colors.raised }]}><View style={[styles.activityMiniFill, { backgroundColor: activityColor, width: `${Math.min(seconds / 3600 * 100, 100)}%` }]} /></View><Text style={{ color: colors.muted, minWidth: 52, textAlign: 'right' }}>{Math.floor(seconds / 60)} min</Text></View></View>;
           })}
         </View>
       )}
-      <Text style={[styles.disclaimer, { color: colors.muted }]}>Movement mix shows walking, running, sitting, and standing time. Distance and energy are rough estimates from steps and profile data, not medical measurements.</Text>
+      <Text style={[styles.disclaimer, { color: colors.muted }]}>Movement mix groups sitting and standing as rest. Distance and energy are rough estimates from steps and profile data, not medical measurements.</Text>
     </Page>
   );
 }
@@ -255,7 +291,7 @@ function HistoryScreen() {
       {activities.isLoading ? <Loading colors={colors} /> : activities.isError ? <InlineError text="Activity history is unavailable." colors={colors} /> : activities.data?.length ? activities.data.map((row) => (
         <Panel key={row.id} style={styles.historyRow}>
           <View style={[styles.activityDot, { backgroundColor: colors.accent }]} />
-          <View style={{ flex: 1 }}><Text style={[styles.activityLabel, { color: colors.text }]}>{row.activity}</Text><Text style={{ color: colors.muted, marginTop: 4 }}>{new Date(row.start_time).toLocaleString()}</Text></View>
+          <View style={{ flex: 1 }}><Text style={[styles.activityLabel, { color: colors.text }]}>{getDisplayActivityName(row.activity)}</Text><Text style={{ color: colors.muted, marginTop: 4 }}>{new Date(row.start_time).toLocaleString()}</Text></View>
           <Text style={{ color: colors.muted }}>{Math.round(row.duration_seconds / 60)} min</Text>
         </Panel>
       )) : <EmptyState title="A fresh start" copy="Your activity sessions will collect here as you move." colors={colors} />}
@@ -297,7 +333,7 @@ function AnalyticsScreen() {
           </Panel>
           <View style={styles.sectionHeading}><Title style={styles.sectionTitle}>Activity mix</Title><Label>MINUTES</Label></View>
           <Panel style={styles.chartPanel}>
-            {data.length ? <BarChart data={{ labels: ['Walk', 'Run', 'Sit', 'Stand'], datasets: [{ data: ['walking_minutes', 'running_minutes', 'sitting_minutes', 'standing_minutes'].map((key) => data.reduce((sum, day) => sum + day[key], 0)) }] }} width={Dimensions.get('window').width - 56} height={210} chartConfig={chartConfig} fromZero showValuesOnTopOfBars /> : <EmptyState title="No activity mix yet" copy="Activity minutes appear after classification is active." colors={colors} />}
+            {data.length ? <BarChart data={{ labels: ['Walk', 'Run', 'Rest'], datasets: [{ data: ['walking_minutes', 'running_minutes'].map((key) => data.reduce((sum, day) => sum + (day[key] || 0), 0)).concat(data.reduce((sum, day) => sum + (day.sitting_minutes || 0) + (day.standing_minutes || 0), 0)) }] }} width={Dimensions.get('window').width - 56} height={210} chartConfig={chartConfig} fromZero showValuesOnTopOfBars /> : <EmptyState title="No activity mix yet" copy="Activity minutes appear after classification is active." colors={colors} />}
           </Panel>
           <View style={styles.sectionHeading}><Title style={styles.sectionTitle}>This month</Title><Label>MONTH TO DATE</Label></View>
           {monthly.isLoading ? <Loading colors={colors} /> : monthly.isError ? <InlineError text="Monthly totals are unavailable." colors={colors} /> : <Panel style={styles.monthPanel}><Text style={[styles.metricValue, { color: colors.text }]}>{(monthly.data?.totals?.total_steps || 0).toLocaleString()}</Text><Label>TOTAL STEPS THIS MONTH</Label><Text style={{ color: colors.muted, marginTop: 10 }}>{(monthly.data?.totals?.total_distance || 0).toFixed(1)} km travelled</Text></Panel>}
@@ -314,7 +350,7 @@ function GoalsScreen() {
   const goals = useQuery({ queryKey: ['goals'], queryFn: goalsApi.get });
   const steps = useQuery({ queryKey: ['steps', 'today'], queryFn: stepsApi.today });
   const stepHistory = useQuery({ queryKey: ['steps', 'history'], queryFn: stepsApi.history, staleTime: 300000 });
-  const recommendation = getStepGoalRecommendation(stepHistory.data || []);
+  const recommendation = getStepGoalRecommendation(stepHistory.data || [], new Date(), user || {});
   const [daily, setDaily] = useState(String(STARTER_DAILY_STEP_GOAL));
   const [weekly, setWeekly] = useState('3');
   const [distance, setDistance] = useState('50');
@@ -337,7 +373,7 @@ function GoalsScreen() {
         <Text style={[styles.heroEyebrow, { color: colors.muted }]}>{recommendation.isPersonalized ? 'RECENT ACTIVITY SUGGESTION' : 'STARTER TARGET'}</Text>
         <Text style={[styles.quoteText, { color: colors.text }]}>{recommendation.isPersonalized
           ? `Your ${recommendation.sampleDays}-day average is ${recommendation.averageSteps.toLocaleString()} steps. A gradual next target is ${recommendation.dailyStepGoal.toLocaleString()}.`
-          : `Start at ${STARTER_DAILY_STEP_GOAL.toLocaleString()} steps. After 3 tracked days, BFit can suggest a gradual target from your recent average.`}</Text>
+          : `Your starting target uses your profile. After 3 tracked days, BFit can refine it using your recent average.`}</Text>
         {Number(daily) !== recommendation.dailyStepGoal && (
           <Pressable accessibilityRole="button" onPress={() => setDaily(String(recommendation.dailyStepGoal))} style={[styles.suggestionButton, { borderColor: colors.line }]}>
             <Text style={{ color: colors.accent, fontWeight: '700' }}>Use {recommendation.dailyStepGoal.toLocaleString()} steps</Text>
@@ -375,6 +411,7 @@ function ProfileScreen() {
   const [age, setAge] = useState(String(user?.age || ''));
   const [height, setHeight] = useState(String(user?.height_cm || ''));
   const [weight, setWeight] = useState(String(user?.weight_kg || ''));
+  const [gender, setGender] = useState(String(user?.gender || ''));
   const [savingProfile, setSavingProfile] = useState(false);
   const [reminderEnabled, setReminderEnabled] = useState(false);
   const [reminderHour, setReminderHour] = useState('19');
@@ -386,7 +423,8 @@ function ProfileScreen() {
     setAge(String(user?.age || ''));
     setHeight(String(user?.height_cm || ''));
     setWeight(String(user?.weight_kg || ''));
-  }, [user?.age, user?.height_cm, user?.weight_kg]);
+    setGender(String(user?.gender || ''));
+  }, [user?.age, user?.height_cm, user?.weight_kg, user?.gender]);
   useEffect(() => {
     let active = true;
     getMovementReminderSettings().then((settings) => {
@@ -398,17 +436,25 @@ function ProfileScreen() {
     return () => { active = false; };
   }, []);
   const updateReminder = async (enabled) => {
+    const wasEnabled = reminderEnabled;
     setSavingReminder(true);
     try {
       if (enabled) {
-        await scheduleMovementReminder(Number(reminderHour), Number(reminderMinute));
+        const result = await scheduleMovementReminder(Number(reminderHour), Number(reminderMinute));
+        Alert.alert(
+          result.previousReminderMayRemain ? 'Reminder updated with a warning' : 'Reminder updated',
+          result.previousReminderMayRemain
+            ? `Your reminder is set for ${reminderHour}:${reminderMinute}, but the previous reminder could not be removed and may also fire.`
+            : `Your daily movement reminder is set for ${reminderHour}:${reminderMinute}.`,
+        );
       } else {
         await cancelMovementReminder();
+        Alert.alert('Reminder turned off', 'Your daily movement reminder has been cancelled.');
       }
       setReminderEnabled(enabled);
     } catch (error) {
       Alert.alert('Reminder not updated', error.message || 'Check notification permission and try again.');
-      if (enabled) setReminderEnabled(false);
+      setReminderEnabled(wasEnabled);
     } finally {
       setSavingReminder(false);
     }
@@ -420,8 +466,21 @@ function ProfileScreen() {
         age: Number(age),
         height_cm: Number(height),
         weight_kg: Number(weight),
+        gender: gender || null,
       });
       setUser(updatedUser);
+      try {
+        const [history, savedGoals] = await Promise.all([stepsApi.history(), goalsApi.get()]);
+        const recommendation = getStepGoalRecommendation(history, new Date(), updatedUser);
+        await goalsApi.save({
+          daily_step_goal: recommendation.dailyStepGoal,
+          weekly_running_goal: savedGoals.weekly_running_goal,
+          monthly_distance_goal: savedGoals.monthly_distance_goal,
+        });
+        await client.invalidateQueries({ queryKey: ['goals'] });
+      } catch {
+        Alert.alert('Profile saved', 'Your profile was saved, but the personalized step goal could not be updated. Check your connection and try again.');
+      }
       setIsEditingProfile(false);
     } catch (error) {
       const detail = error.response?.data?.detail;
@@ -451,6 +510,8 @@ function ProfileScreen() {
             <Field label="HEIGHT (cm)" value={height} onChangeText={setHeight} keyboardType="numeric" containerStyle={styles.fieldCompact} colors={colors} />
           </View>
           <Field label="WEIGHT (kg)" value={weight} onChangeText={setWeight} keyboardType="numeric" colors={colors} />
+          <Text style={[styles.label, { marginTop: 10, marginBottom: 8, color: colors.muted }]}>GENDER</Text>
+          <GenderPicker value={gender} onChange={setGender} colors={colors} />
           <View style={styles.profileActions}>
             <Pressable disabled={savingProfile} onPress={() => setIsEditingProfile(false)} style={[styles.cancelButton, { borderColor: colors.line }]}><Text style={{ color: colors.muted, fontWeight: '700' }}>Cancel</Text></Pressable>
             <Pressable disabled={savingProfile || !age || !height || !weight} onPress={saveProfile} style={[styles.saveProfileButton, { backgroundColor: colors.accent, opacity: savingProfile || !age || !height || !weight ? 0.6 : 1 }]}>
@@ -463,6 +524,7 @@ function ProfileScreen() {
           <InfoRow label="Age" value={user?.age ? `${user.age} years` : 'Not provided'} colors={colors} />
           <InfoRow label="Height" value={user?.height_cm ? `${user.height_cm} cm` : 'Not provided'} colors={colors} />
           <InfoRow label="Weight" value={user?.weight_kg ? `${user.weight_kg} kg` : 'Not provided'} colors={colors} />
+          <InfoRow label="Gender" value={user?.gender || 'Not provided'} colors={colors} />
         </>
       )}
           <InfoRow label="Daily target" value={goals.data ? `${goals.data.daily_step_goal.toLocaleString()} steps` : 'Not set'} colors={colors} />
@@ -495,6 +557,11 @@ function ProfileScreen() {
               </Pressable>
             </View>
           )}
+          {reminderEnabled && (
+            <Text style={{ color: colors.muted, fontSize: 12, lineHeight: 18, marginTop: 10 }}>
+              Repeats once each day. If today’s time has passed, it will notify tomorrow. Android may deliver it slightly late to save battery.
+            </Text>
+          )}
         </View>
       )}
       {Platform.OS === 'android' && !reminderSupported && (
@@ -519,9 +586,16 @@ function OnboardingScreen({ onComplete }) {
   const [age, setAge] = useState(String(user?.age || ''));
   const [height, setHeight] = useState(String(user?.height_cm || ''));
   const [weight, setWeight] = useState(String(user?.weight_kg || ''));
+  const [gender, setGender] = useState(String(user?.gender || ''));
   const [saving, setSaving] = useState(false);
   const stepHistory = useQuery({ queryKey: ['steps', 'history'], queryFn: stepsApi.history, staleTime: 300000 });
-  const recommendation = getStepGoalRecommendation(stepHistory.data || []);
+  const recommendation = getStepGoalRecommendation(stepHistory.data || [], new Date(), {
+    ...user,
+    age: Number(age) || user?.age,
+    height_cm: Number(height) || user?.height_cm,
+    weight_kg: Number(weight) || user?.weight_kg,
+    gender,
+  });
 
   const complete = async () => {
     if (!age || !height || !weight) return;
@@ -531,8 +605,10 @@ function OnboardingScreen({ onComplete }) {
         age: Number(age),
         height_cm: Number(height),
         weight_kg: Number(weight),
+        gender: gender || null,
       });
-      const goalPlan = getGoalSummary(recommendation.dailyStepGoal);
+      const profileRecommendation = getStepGoalRecommendation(stepHistory.data || [], new Date(), profile);
+      const goalPlan = getGoalSummary(profileRecommendation.dailyStepGoal);
       await goalsApi.save({
         daily_step_goal: goalPlan.daily_step_goal,
         weekly_running_goal: goalPlan.weekly_running_goal,
@@ -564,6 +640,8 @@ function OnboardingScreen({ onComplete }) {
           <Field label="HEIGHT (cm)" value={height} onChangeText={setHeight} keyboardType="numeric" containerStyle={styles.fieldCompact} colors={colors} />
         </View>
         <Field label="WEIGHT (kg)" value={weight} onChangeText={setWeight} keyboardType="numeric" colors={colors} />
+        <Text style={[styles.label, { alignSelf: 'flex-start', marginTop: 12, marginBottom: 8, color: colors.muted }]}>GENDER (OPTIONAL)</Text>
+        <GenderPicker value={gender} onChange={setGender} colors={colors} />
         <View style={[styles.goalPreview, { backgroundColor: colors.raised }]}> 
           <Label>{recommendation.isPersonalized ? 'BASED ON RECENT STEPS' : 'YOUR STARTING TARGET'}</Label>
           <Text style={[styles.metricValue, { color: colors.text }]}>{recommendation.dailyStepGoal.toLocaleString()} <Text style={{ fontSize: 14, color: colors.muted }}>steps/day</Text></Text>
@@ -589,6 +667,13 @@ function Loading({ colors }) {
 
 function InlineError({ text, colors }) {
   return <Text style={{ color: colors.orange, paddingVertical: 16 }}>{text}</Text>;
+}
+
+function getApiErrorMessage(error, fallback) {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === 'string') return detail;
+  if (error?.response?.status) return `${fallback} (server error ${error.response.status})`;
+  return fallback;
 }
 
 function EmptyState({ title, copy, colors }) {
@@ -635,6 +720,14 @@ function AppContent() {
       .finally(() => { if (mounted) setBooting(false); });
     return () => { mounted = false; };
   }, [setUser]);
+  useEffect(() => {
+    if (!user || (Platform.OS === 'android' && isRunningInExpoGo())) return undefined;
+    let mounted = true;
+    configureMovementNotifications().catch((error) => {
+      if (mounted) Alert.alert('Notifications unavailable', error.message || 'Restart BFit and check notification settings.');
+    });
+    return () => { mounted = false; };
+  }, [user]);
   useEffect(() => {
     if (user && (!user.age || !user.height_cm || !user.weight_kg)) {
       setProfileSetupOpen(true);
@@ -773,6 +866,8 @@ const styles = StyleSheet.create({
   goalInputPanel: { minHeight: 72, flexDirection: 'row', alignItems: 'center', marginTop: 9 },
   goalInput: { width: 88, borderBottomWidth: 1, padding: 7, textAlign: 'right', fontSize: 17, fontWeight: '700' },
   profilePanel: { alignItems: 'center', marginTop: 18, paddingVertical: 25 },
+  genderPicker: { width: '100%', flexDirection: 'row', flexWrap: 'wrap', gap: 9 },
+  genderOption: { flexGrow: 1, flexBasis: '46%', minHeight: 48, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   profileAvatar: { width: 68, height: 68, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   profileName: { fontFamily: 'serif', fontSize: 22, fontWeight: '400', marginTop: 14, marginBottom: 5 },
   infoRow: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

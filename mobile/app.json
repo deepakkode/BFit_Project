@@ -18,6 +18,8 @@
       }
     },
     "android": {
+      "package": "com.deepakkode.bfit",
+      "versionCode": 3,
       "permissions": [
         "ACTIVITY_RECOGNITION"
       ],
@@ -31,6 +33,16 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["expo-status-bar", "expo-secure-store", "expo-notifications"]
+    "plugins": [
+      "expo-status-bar",
+      "expo-secure-store",
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b79eaca4-4c2b-46c9-9a57-f11b6747df17"
+      }
+    },
+    "owner": "kodedeepak"
   }
 }

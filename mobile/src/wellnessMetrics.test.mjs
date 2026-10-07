@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   estimateWalkingMetrics,
   getActivityReadingStatus,
+  getDisplayActivityName,
   getGoalSummary,
   getNextQuoteIndex,
   getStepGoalRecommendation,
@@ -42,6 +43,18 @@ test('clamps a personalized recommendation to the supported goal range', () => {
   assert.equal(getStepGoalRecommendation(history, new Date('2026-10-06T12:00:00Z')).dailyStepGoal, 12000);
 });
 
+test('personalizes starter recommendations from age, height, weight, and gender', () => {
+  const history = [];
+  const baseline = getStepGoalRecommendation(history, new Date('2026-10-06T12:00:00Z'), {
+    age: 35, height_cm: 170, weight_kg: 70, gender: 'Female',
+  });
+  const profileAdjusted = getStepGoalRecommendation(history, new Date('2026-10-06T12:00:00Z'), {
+    age: 65, height_cm: 150, weight_kg: 90, gender: 'Male',
+  });
+
+  assert.notEqual(profileAdjusted.dailyStepGoal, baseline.dailyStepGoal);
+});
+
 test('calculates consistent walking distance and approximate calories', () => {
   assert.deepEqual(estimateWalkingMetrics(10000, { height_cm: 170, weight_kg: 70 }), {
     distanceKm: 7.021,
@@ -75,4 +88,11 @@ test('marks low-confidence and stale activity readings clearly', () => {
   assert.deepEqual(getActivityReadingStatus({
     activity: 'Standing', confidence_score: 0.95, prediction_timestamp: '2026-10-06T11:57:00Z',
   }, now), { isStale: true, note: 'Last detected 3 min ago' });
+});
+
+test('groups sitting and standing under the user-facing Rest label', () => {
+  assert.equal(getDisplayActivityName('Sitting'), 'Rest');
+  assert.equal(getDisplayActivityName('Standing'), 'Rest');
+  assert.equal(getDisplayActivityName('Walking'), 'Walking');
+  assert.equal(getDisplayActivityName('Running'), 'Running');
 });

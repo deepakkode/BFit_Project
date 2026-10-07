@@ -1,10 +1,11 @@
 # BFit
 
-BFit is an Expo React Native application with a FastAPI/PostgreSQL backend for tracking steps and recognizing Walking, Running, Sitting, and Standing. The first model adapter is Random Forest, trained on WISDM smartphone accelerometer data; its interface keeps future model families independent of API and app contracts.
+BFit is an Expo React Native application with a FastAPI/PostgreSQL backend for tracking steps and recognizing Walking, Running, Sitting, and Standing. The app presents Sitting and Standing together as Rest. The first model adapter is Random Forest, trained on WISDM smartphone accelerometer data; its interface keeps future model families independent of API and app contracts.
 
 ## Project Layout
 
 - `mobile/` - React Native app in JavaScript, React Navigation, React Query, Zustand, Axios, Expo sensors, charts, and secure token storage.
+- `mobile_flutter/` - parallel Flutter/Dart port of the mobile app. It uses the same `/api/v1` backend; the Expo app remains unchanged during migration.
 - `backend/` - FastAPI, SQLAlchemy, Pydantic, JWT authentication, repositories, services, and Alembic migrations.
 - `ml/` - WISDM preprocessing, subject-held-out training/evaluation, model artifact and metrics output.
 - `docs/` - architecture, data model, API contract, and roadmap.
@@ -26,12 +27,16 @@ Interactive API docs are at `/docs`, OpenAPI JSON at `/openapi.json`, and health
 
 ## Product Behavior
 
-- Daily step goals start at 6,000 until at least three positive step-history days exist in the last week. Then BFit suggests 110% of the average, rounded to the nearest 500 and clamped between 3,000 and 12,000. The suggestion is optional and editable in Goals.
+- Daily step goals start from a gradual profile-adjusted 6,000-step baseline using age, height, weight, and gender when provided. After at least three positive step-history days in the last week, BFit suggests 110% of the recent average, adjusted for profile, rounded to the nearest 500, and clamped between 3,000 and 12,000. The suggestion is editable in Goals.
 - Distance and calories are rough walking estimates from steps, height, and weight. They are not medical or clinical measurements.
 - Motivational quotes rotate on app launch and foreground return. Daily movement reminders are optional local notifications; they require user permission and a native mobile runtime.
 - For phone testing, use `npm run start:lan`, point `EXPO_PUBLIC_API_URL` to this PC's current Wi-Fi IPv4, and reload using the newly printed Expo QR code after changing that address. Production builds must use a deployed HTTPS API URL.
 
 Run the mobile logic tests with `cd mobile && npm test`. Run backend tests with `cd backend && python -m pytest tests -q` after activating the backend environment.
+
+## Flutter mobile migration
+
+The Flutter application is under `mobile_flutter/`; it does not replace or remove the Expo app. Install Flutter stable with Dart 3.5+, then follow [the Flutter app README](mobile_flutter/README.md) for API URL overrides, physical-device permission/sensor checks, tests, and Android signing caveats. Its default API is `https://bfit-api.onrender.com/api/v1`. A Flutter APK retaining `com.deepakkode.bfit` is not automatically compatible with an installed Expo APK: in-place updates require the original Android signing key, which is not stored in this repository.
 
 ## Train the Version 1 Model
 

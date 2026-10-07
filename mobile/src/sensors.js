@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import { Accelerometer, Pedometer } from 'expo-sensors';
+import * as SecureStore from 'expo-secure-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { activityApi, stepsApi } from './api';
 import { estimateWalkingMetrics } from './wellnessMetrics.mjs';
@@ -8,9 +9,14 @@ import { estimateWalkingMetrics } from './wellnessMetrics.mjs';
 const WINDOW_LENGTH = 200;
 const SAMPLE_INTERVAL_MS = 50;
 const GRAVITY = 9.80665;
+const STEP_CACHE_KEY = 'bfit.localSteps';
 
-function localDateString(date) {
+function utcDateString(date = new Date()) {
   return date.toISOString().slice(0, 10);
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 export function useActivitySensors(enabled, user, permissionRefreshToken = 0) {
@@ -49,24 +55,6 @@ export function useActivitySensors(enabled, user, permissionRefreshToken = 0) {
     });
 
     let pedometerSubscription;
-    let lastWatchTotal = 0;
-    const uploadDailyTotals = async (stepsToday) => {
-      if (!active) return;
-      const today = new Date();
-      try {
-        const metrics = estimateWalkingMetrics(stepsToday, user);
-        await stepsApi.update({
-          log_date: localDateString(today),
-          steps: stepsToday,
-          distance_km: metrics.distanceKm,
-          calories_burned: metrics.caloriesKcal,
-        });
-        queryClient.invalidateQueries({ queryKey: ['steps'] });
-      } catch {
-        setPedometerStatus('Steps detected, but saving failed. Check API connection.');
-      }
-    };
-
     const startPedometer = async () => {
       try {
         const available = await Pedometer.isAvailableAsync();
@@ -83,31 +71,116 @@ export function useActivitySensors(enabled, user, permissionRefreshToken = 0) {
           return;
         }
 
+        let logDate = utcDateString();
+        let dailySteps = 0;
+        let serverBaselineLoaded = false;
+        const cached = await SecureStore.getItemAsync(STEP_CACHE_KEY);
+        if (cached) {
+          try {
+            const snapshot = JSON.parse(cached);
+            if (snapshot.logDate === logDate && Number.isFinite(snapshot.steps)) {
+              dailySteps = Math.max(0, snapshot.steps);
+            }
+          } catch {
+            await SecureStore.deleteItemAsync(STEP_CACHE_KEY);
+          }
+        }
+        try {
+          const existing = await stepsApi.today();
+          dailySteps = Math.max(dailySteps, Number(existing.steps) || 0);
+          serverBaselineLoaded = true;
+        } catch {
+          setPedometerStatus('Step counter active. Syncing with the server when available.');
+        }
+
+        if (!active) return;
         if (Platform.OS === 'ios') {
           const today = new Date();
           const midnight = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
           try {
             const result = await Pedometer.getStepCountAsync(midnight, today);
-            const existing = await stepsApi.today();
-            await uploadDailyTotals(Math.max(existing.steps || 0, result.steps));
+            dailySteps = Math.max(dailySteps, result.steps);
+            if (serverBaselineLoaded && dailySteps > 0) {
+              const metrics = estimateWalkingMetrics(dailySteps, user);
+              await stepsApi.update({
+                log_date: logDate,
+                steps: dailySteps,
+                distance_km: metrics.distanceKm,
+                calories_burned: metrics.caloriesKcal,
+              });
+            }
           } catch {
-            // Historical step totals are optional; continue with live updates.
+            // Historical totals are optional; continue counting live steps.
           }
         }
-
-        if (!active) return;
+        await SecureStore.setItemAsync(STEP_CACHE_KEY, JSON.stringify({ logDate, steps: dailySteps }));
+        queryClient.setQueryData(['steps', 'today'], (existing) => ({
+          ...(existing || {}),
+          log_date: logDate,
+          steps: dailySteps,
+        }));
+        let lastWatchTotal = 0;
+        let uploadQueue = Promise.resolve();
         pedometerSubscription = Pedometer.watchStepCount(({ steps }) => {
           const delta = Math.max(0, steps - lastWatchTotal);
           lastWatchTotal = Math.max(lastWatchTotal, steps);
           if (delta === 0) return;
-          setPedometerStatus('Step counter active');
-          stepsApi.today()
-            .then((existing) => uploadDailyTotals((existing.steps || 0) + delta))
-            .catch(() => setPedometerStatus('Steps detected, but could not read today’s total.'));
+          uploadQueue = uploadQueue.then(async () => {
+            if (!active) return;
+            const currentDate = utcDateString();
+            if (currentDate !== logDate) {
+              logDate = currentDate;
+              dailySteps = 0;
+              serverBaselineLoaded = false;
+            }
+            if (!serverBaselineLoaded) {
+              try {
+                const existing = await stepsApi.today();
+                dailySteps = Math.max(dailySteps, Number(existing.steps) || 0);
+                serverBaselineLoaded = true;
+              } catch {
+                setPedometerStatus('Step counter active. Syncing with the server when available.');
+                return;
+              }
+            }
+            dailySteps += delta;
+            const metrics = estimateWalkingMetrics(dailySteps, user);
+            await SecureStore.setItemAsync(STEP_CACHE_KEY, JSON.stringify({ logDate, steps: dailySteps }));
+            queryClient.setQueryData(['steps', 'today'], (existing) => ({
+              ...(existing || {}),
+              log_date: logDate,
+              steps: dailySteps,
+              distance_km: metrics.distanceKm,
+              calories_burned: metrics.caloriesKcal,
+            }));
+            let lastError;
+            for (let attempt = 0; attempt < 3; attempt += 1) {
+              try {
+                await stepsApi.update({
+                  log_date: logDate,
+                  steps: dailySteps,
+                  distance_km: metrics.distanceKm,
+                  calories_burned: metrics.caloriesKcal,
+                });
+                setPedometerStatus('Step counter active');
+                queryClient.invalidateQueries({ queryKey: ['steps'] });
+                return;
+              } catch (error) {
+                lastError = error;
+                if (attempt < 2) await wait(500 * (attempt + 1));
+              }
+            }
+            const status = lastError?.response?.status;
+            setPedometerStatus(status === 401
+              ? 'Steps counted on this phone, but sign in again to sync.'
+              : 'Steps counted on this phone; server sync will retry as you walk.');
+          }).catch((error) => {
+            setPedometerStatus(error.message || 'Step counter could not save today’s total.');
+          });
         });
         setPedometerStatus('Step counter active. Walk a few steps to sync.');
       } catch {
-        if (active) setPedometerStatus('Step counter could not start. Check activity permission.');
+        if (active) setPedometerStatus('Step counter could not start. Check activity permission and device sensor support.');
       }
     };
 

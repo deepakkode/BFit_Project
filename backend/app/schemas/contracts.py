@@ -47,6 +47,7 @@ class UserProfileUpdate(BaseModel):
     age: int = Field(ge=13, le=120)
     height_cm: float = Field(gt=0, le=260)
     weight_kg: float = Field(gt=0, le=500)
+    gender: str | None = Field(default=None, max_length=32)
 
 
 class TokenRead(BaseModel):
@@ -91,6 +92,13 @@ class StepRead(StepUpdate):
     model_config = ConfigDict(from_attributes=True)
 
 
+class StepTodayRead(BaseModel):
+    log_date: date
+    steps: int
+    distance_km: float
+    calories_burned: float
+
+
 class GoalWrite(BaseModel):
     daily_step_goal: int = Field(gt=0, le=100000)
     weekly_running_goal: int = Field(ge=0, le=100)
@@ -103,6 +111,7 @@ class GoalRead(GoalWrite):
 
 
 class ActivityRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: str
     activity: ActivityName
     confidence_score: float

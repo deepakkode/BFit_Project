@@ -84,4 +84,15 @@ def today_activity(db: DbSession, user: CurrentUser) -> dict:
         ActivityLog.user_id == user.id, ActivityLog.start_time >= start, ActivityLog.start_time < end,
     ).order_by(ActivityLog.start_time.desc())))
     totals = {label: sum(item.duration_seconds for item in rows if item.activity == label) for label in ("Walking", "Running", "Sitting", "Standing")}
-    return {"date": today, "duration_seconds": totals, "logs": rows}
+    logs = [
+        {
+            "id": item.id,
+            "activity": item.activity,
+            "confidence_score": item.confidence_score,
+            "start_time": item.start_time,
+            "end_time": item.end_time,
+            "duration_seconds": item.duration_seconds,
+        }
+        for item in rows
+    ]
+    return {"date": today, "duration_seconds": totals, "logs": logs}

@@ -7,7 +7,7 @@ const baseURL = getApiBaseURL(process.env.EXPO_PUBLIC_API_URL, Platform.OS);
 export const API_BASE_URL = baseURL;
 const api = axios.create({
   baseURL,
-  timeout: 15000,
+  timeout: 75000,
 });
 
 api.interceptors.request.use(async (config) => {

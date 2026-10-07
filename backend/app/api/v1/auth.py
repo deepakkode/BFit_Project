@@ -46,6 +46,7 @@ def update_profile(payload: UserProfileUpdate, db: DbSession, user: CurrentUser)
     user.age = payload.age
     user.height_cm = payload.height_cm
     user.weight_kg = payload.weight_kg
+    user.gender = payload.gender
     db.commit()
     db.refresh(user)
     return user

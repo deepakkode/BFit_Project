@@ -20,6 +20,28 @@ async function writeValue(key, value) {
   await SecureStore.setItemAsync(key, value);
 }
 
+async function getNotifications() {
+  if (Platform.OS === 'web') throw new Error('Daily reminders are available in the mobile app.');
+  if (Platform.OS === 'android' && isRunningInExpoGo()) {
+    throw new Error('Android reminders need an installed BFit development build; Expo Go cannot load the notifications module.');
+  }
+
+  const Notifications = await import('expo-notifications');
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: false,
+      shouldSetBadge: false,
+    }),
+  });
+  return Notifications;
+}
+
+export async function configureMovementNotifications() {
+  await getNotifications();
+}
+
 export async function getMovementReminderSettings() {
   try {
     const [enabled, hour, minute] = await Promise.all([
@@ -38,15 +60,11 @@ export async function getMovementReminderSettings() {
 }
 
 export async function scheduleMovementReminder(hour, minute) {
-  if (Platform.OS === 'web') throw new Error('Daily reminders are available in the mobile app.');
-  if (Platform.OS === 'android' && isRunningInExpoGo()) {
-    throw new Error('Android reminders need an installed BFit development build; Expo Go cannot load the notifications module.');
-  }
   if (!Number.isInteger(hour) || hour < 0 || hour > 23 || !Number.isInteger(minute) || minute < 0 || minute > 59) {
     throw new Error('Enter a valid reminder time.');
   }
 
-  const Notifications = await import('expo-notifications');
+  const Notifications = await getNotifications();
   if (Platform.OS === 'android') {
     await Notifications.setNotificationChannelAsync('daily-movement', {
       name: 'Daily movement reminder',
@@ -60,14 +78,6 @@ export async function scheduleMovementReminder(hour, minute) {
   if (!permission.granted) throw new Error('Allow notifications in system settings to use movement reminders.');
 
   const existingIdentifier = await readValue(IDENTIFIER_KEY);
-  if (existingIdentifier) {
-    try {
-      await Notifications.cancelScheduledNotificationAsync(existingIdentifier);
-    } catch {
-      // The old reminder may already have expired or been removed by the OS.
-    }
-  }
-
   const identifier = await Notifications.scheduleNotificationAsync({
     content: {
       title: 'A little movement goes a long way',
@@ -82,17 +92,31 @@ export async function scheduleMovementReminder(hour, minute) {
     },
   });
 
-  await Promise.all([
-    writeValue(ENABLED_KEY, 'true'),
-    writeValue(HOUR_KEY, String(hour)),
-    writeValue(MINUTE_KEY, String(minute)),
-    writeValue(IDENTIFIER_KEY, identifier),
-  ]);
+  try {
+    await Promise.all([
+      writeValue(ENABLED_KEY, 'true'),
+      writeValue(HOUR_KEY, String(hour)),
+      writeValue(MINUTE_KEY, String(minute)),
+      writeValue(IDENTIFIER_KEY, identifier),
+    ]);
+  } catch (error) {
+    await Notifications.cancelScheduledNotificationAsync(identifier);
+    throw error;
+  }
+
+  let previousReminderMayRemain = false;
+  if (existingIdentifier && existingIdentifier !== identifier) {
+    try {
+      await Notifications.cancelScheduledNotificationAsync(existingIdentifier);
+    } catch {
+      previousReminderMayRemain = true;
+    }
+  }
+  return { previousReminderMayRemain };
 }
 
 export async function cancelMovementReminder() {
-  if (Platform.OS === 'android' && isRunningInExpoGo()) return;
-  const Notifications = await import('expo-notifications');
+  const Notifications = await getNotifications();
   const identifier = await readValue(IDENTIFIER_KEY);
   if (identifier) {
     try {

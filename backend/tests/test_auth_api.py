@@ -67,21 +67,36 @@ def test_register_login_and_profile() -> None:
             current_activity = client.get("/api/v1/activity/current", headers={"Authorization": f"Bearer {token}"})
             assert current_activity.status_code == 200
             assert current_activity.json()["prediction_timestamp"] is None
+            activity_today = client.get("/api/v1/activity/today", headers={"Authorization": f"Bearer {token}"})
+            assert activity_today.status_code == 200
+            assert activity_today.json()["duration_seconds"] == {
+                "Walking": 0,
+                "Running": 0,
+                "Sitting": 0,
+                "Standing": 0,
+            }
+            assert activity_today.json()["logs"] == []
+            steps_today = client.get("/api/v1/steps/today", headers={"Authorization": f"Bearer {token}"})
+            assert steps_today.status_code == 200
+            assert steps_today.json()["steps"] == 0
 
             updated_profile = client.put("/api/v1/auth/profile", headers={"Authorization": f"Bearer {token}"}, json={
                 "age": 31,
                 "height_cm": 172,
                 "weight_kg": 68,
+                "gender": "Female",
             })
             assert updated_profile.status_code == 200
             assert updated_profile.json()["age"] == 31
             assert updated_profile.json()["height_cm"] == 172
             assert updated_profile.json()["weight_kg"] == 68
+            assert updated_profile.json()["gender"] == "Female"
 
             refreshed_profile = client.get("/api/v1/auth/profile", headers={"Authorization": f"Bearer {token}"})
             assert refreshed_profile.json()["age"] == 31
             assert refreshed_profile.json()["height_cm"] == 172
             assert refreshed_profile.json()["weight_kg"] == 68
+            assert refreshed_profile.json()["gender"] == "Female"
 
             invalid_profile = client.put("/api/v1/auth/profile", headers={"Authorization": f"Bearer {token}"}, json={
                 "age": 12,
