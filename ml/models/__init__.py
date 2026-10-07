@@ -1,0 +1,1 @@
+"""Neural activity-recognition architectures."""
