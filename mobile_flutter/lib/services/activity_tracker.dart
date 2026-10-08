@@ -13,6 +13,7 @@ import '../core/app_controller.dart';
 import '../core/models.dart';
 import '../core/step_sync_logic.dart';
 import '../core/wellness_metrics.dart';
+import 'background_step_tracking.dart';
 
 class ActivityTracker extends ChangeNotifier {
   ActivityTracker(this.app);
@@ -20,6 +21,7 @@ class ActivityTracker extends ChangeNotifier {
   final AppController app;
   StreamSubscription<AccelerometerEvent>? _accelerometer;
   StreamSubscription<StepCount>? _pedometer;
+  StreamSubscription<BackgroundStepUpdate>? _backgroundStepUpdates;
   Timer? _sampleTimer;
   Timer? _retryTimer;
   Timer? _dateTimer;
@@ -34,11 +36,14 @@ class ActivityTracker extends ChangeNotifier {
   int _steps = 0;
   int? _lastRawSteps;
   String? _lastRawDate;
+  int? _lastNativeSteps;
+  String? _lastNativeDate;
   bool _hasServerBaseline = false;
   bool _baselineKnown = false;
   bool _dirty = false;
   bool _running = false;
   bool _permissionGranted = true;
+  bool _backgroundTracking = false;
   ActivityReading? latestActivity;
   String stepsStatus = 'Step counter is starting…';
   String activityStatus = 'Movement recognition is starting…';
@@ -55,6 +60,8 @@ class ActivityTracker extends ChangeNotifier {
     _steps = 0;
     _lastRawSteps = null;
     _lastRawDate = null;
+    _lastNativeSteps = null;
+    _lastNativeDate = null;
     _hasServerBaseline = false;
     _baselineKnown = false;
     _dirty = false;
@@ -66,6 +73,7 @@ class ActivityTracker extends ChangeNotifier {
     await _loadServerBaseline();
     if (!_running) return;
 
+    var notificationGranted = true;
     if (Platform.isAndroid) {
       final permission = await Permission.activityRecognition.request();
       _permissionGranted = permission.isGranted;
@@ -73,7 +81,16 @@ class ActivityTracker extends ChangeNotifier {
         stepsStatus = permission.isPermanentlyDenied
             ? 'Allow physical activity access in Settings to count steps.'
             : 'Allow physical activity access to count steps.';
-        notifyListeners();
+      } else {
+        final notificationPermission = await Permission.notification.request();
+        notificationGranted = notificationPermission.isGranted;
+        if (!notificationGranted) {
+          stepsStatus =
+              'Allow notifications to keep step tracking active in the background.';
+        }
+      }
+      if (!_permissionGranted || !notificationGranted) {
+        await BackgroundStepTracking.stop();
       }
     }
     _accelerometer = accelerometerEventStream(
@@ -90,15 +107,36 @@ class ActivityTracker extends ChangeNotifier {
       const Duration(milliseconds: 50),
       (_) => _captureSample(),
     );
-    if (_permissionGranted) {
-      _pedometer = Pedometer.stepCountStream.listen(
-        _onStepCount,
+    if (Platform.isAndroid && _permissionGranted && notificationGranted) {
+      _backgroundStepUpdates = BackgroundStepTracking.updates.listen(
+        _onBackgroundStepUpdate,
         onError: (Object error) {
-          stepsStatus = 'Step counter is unavailable. Check device permissions.';
+          if (!_running) return;
+          _backgroundTracking = false;
+          stepsStatus =
+              'Background tracking could not connect. Steps may pause when BFit is closed.';
+          _startPedometer();
           notifyListeners();
         },
         cancelOnError: false,
       );
+      try {
+        _backgroundTracking = await BackgroundStepTracking.start(
+          userId: profile.id,
+          seedSteps: _steps,
+        );
+        if (!_backgroundTracking) {
+          stepsStatus =
+              'Background step tracking did not start. Steps may pause when BFit is closed.';
+        }
+      } catch (_) {
+        _backgroundTracking = false;
+        stepsStatus =
+            'Background step tracking is unavailable. Steps may pause when BFit is closed.';
+      }
+    }
+    if (_permissionGranted && !(_backgroundTracking && Platform.isAndroid)) {
+      _startPedometer();
     }
     _retryTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(_enqueueStepWork(_retrySync));
@@ -106,11 +144,80 @@ class ActivityTracker extends ChangeNotifier {
     _dateTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       unawaited(_enqueueStepWork(_checkDateRollover));
     });
-    stepsStatus = _permissionGranted
-        ? 'Step counter is active · earlier phone history may not be available'
-        : 'Steps are paused until activity access is allowed.';
+    if (!_permissionGranted) {
+      stepsStatus = 'Steps are paused until activity access is allowed.';
+    } else if (Platform.isAndroid && !notificationGranted) {
+      stepsStatus =
+          'Allow notifications to keep step tracking active in the background.';
+    } else if (_backgroundTracking) {
+      stepsStatus = 'Background step tracking is active · syncing with BFit';
+    } else if (stepsStatus == 'Step counter is starting…') {
+      stepsStatus =
+          'Step counter is active · earlier phone history may not be available';
+    }
     activityStatus = 'Collecting movement data · 20 samples per second';
     notifyListeners();
+  }
+
+  void _startPedometer() {
+    if (_pedometer != null || !_permissionGranted) return;
+    _pedometer = Pedometer.stepCountStream.listen(
+      _onStepCount,
+      onError: (Object error) {
+        stepsStatus = 'Step counter is unavailable. Check device permissions.';
+        notifyListeners();
+      },
+      cancelOnError: false,
+    );
+  }
+
+  void _onBackgroundStepUpdate(BackgroundStepUpdate update) {
+    if (!_running || update.userId != _userId) return;
+    if (!update.available) {
+      _backgroundTracking = false;
+      stepsStatus = update.message.isNotEmpty
+          ? update.message
+          : 'Background step tracking is unavailable on this phone.';
+      _startPedometer();
+      notifyListeners();
+      return;
+    }
+    _backgroundTracking = true;
+    if (update.logDate != _logDate) {
+      unawaited(_enqueueStepWork(() async {
+        await _checkDateRollover();
+        if (update.logDate != _logDate) return;
+        await _applyBackgroundStepUpdate(update);
+      }));
+      return;
+    }
+    unawaited(_enqueueStepWork(() => _applyBackgroundStepUpdate(update)));
+  }
+
+  Future<void> _applyBackgroundStepUpdate(BackgroundStepUpdate update) async {
+    final delta = nativeStepDelta(
+      updateDate: update.logDate,
+      updateSteps: update.steps,
+      seedSteps: update.seedSteps,
+      seeded: update.seeded,
+      previousDate: _lastNativeDate,
+      previousSteps: _lastNativeSteps,
+    );
+    _lastNativeDate = update.logDate;
+    _lastNativeSteps = update.steps;
+    if (delta > 0) {
+      _steps += delta;
+      _dirty = true;
+    }
+    await _persistSnapshot();
+    if (delta > 0) {
+      await _retrySync();
+    } else if (_running) {
+      stepsStatus = _dirty || _pendingDays.isNotEmpty
+          ? 'Steps are saved on this phone and waiting to sync.'
+          : 'Background step tracking is active · synced';
+      notifyListeners();
+    }
   }
 
   void _captureSample() {
@@ -378,6 +485,10 @@ class ActivityTracker extends ChangeNotifier {
       } else if (value['log_date'] is String && raw is num) {
         _lastRawDate = value['log_date'] as String;
       }
+      final nativeSteps = value['native_steps'];
+      if (nativeSteps is num) _lastNativeSteps = nativeSteps.toInt();
+      final nativeDate = value['native_date'];
+      if (nativeDate is String) _lastNativeDate = nativeDate;
     } on FormatException {
       await prefs.remove(_snapshotKey);
     } on TypeError {
@@ -401,6 +512,8 @@ class ActivityTracker extends ChangeNotifier {
       'steps': _steps,
       'raw_steps': _lastRawSteps,
       'raw_date': _lastRawDate,
+      'native_steps': _lastNativeSteps,
+      'native_date': _lastNativeDate,
       'pending': _dirty,
       'baseline_known': _baselineKnown,
       'pending_days': _pendingDays,
@@ -415,8 +528,11 @@ class ActivityTracker extends ChangeNotifier {
     _dateTimer?.cancel();
     await _accelerometer?.cancel();
     await _pedometer?.cancel();
+    await _backgroundStepUpdates?.cancel();
     _accelerometer = null;
     _pedometer = null;
+    _backgroundStepUpdates = null;
+    _backgroundTracking = false;
     _sampleTimer = null;
     _retryTimer = null;
     _dateTimer = null;

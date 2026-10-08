@@ -18,6 +18,15 @@ class ReminderSettings {
   final int minute;
 }
 
+class NotificationPermissionException implements Exception {
+  const NotificationPermissionException(this.message);
+
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
 class ReminderService {
   ReminderService._();
   static final ReminderService instance = ReminderService._();
@@ -140,7 +149,7 @@ class ReminderService {
         sound: true,
       );
       if (granted == false || iosGranted == false) {
-        throw StateError(
+        throw const NotificationPermissionException(
           'Notifications were not enabled. Allow BFit notifications in device settings and try again.',
         );
       }

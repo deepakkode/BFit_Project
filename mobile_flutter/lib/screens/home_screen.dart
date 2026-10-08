@@ -11,7 +11,8 @@ import '../core/widgets.dart';
 import '../services/activity_tracker.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({required this.controller, required this.tracker, super.key});
+  const HomeScreen(
+      {required this.controller, required this.tracker, super.key});
   final AppController controller;
   final ActivityTracker tracker;
 
@@ -69,9 +70,10 @@ class _HomeScreenState extends State<HomeScreen> {
       return;
     }
     _refreshing = true;
-    if (mounted) setState(() {
-      if (_reading == null && _steps == null) _loading = true;
-    });
+    if (mounted)
+      setState(() {
+        if (_reading == null && _steps == null) _loading = true;
+      });
     try {
       try {
         _reading = await widget.controller.api.currentActivity();
@@ -110,9 +112,8 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = widget.controller.user!;
     final palette = context.palette;
     final serverSteps = _steps?.steps ?? 0;
-    final localSteps = widget.tracker.stepDate == _todayUtc()
-        ? widget.tracker.localSteps
-        : 0;
+    final localSteps =
+        widget.tracker.stepDate == _todayUtc() ? widget.tracker.localSteps : 0;
     final steps = localSteps > serverSteps ? localSteps : serverSteps;
     final stepAvailable = _steps != null || localSteps > 0;
     final goal = _goals?.dailySteps ?? starterDailyStepGoal;
@@ -124,7 +125,8 @@ class _HomeScreenState extends State<HomeScreen> {
         : const <String, dynamic>{};
     final walkMinutes = asInt(durations['Walking']) ~/ 60;
     final runMinutes = asInt(durations['Running']) ~/ 60;
-    final restMinutes = (asInt(durations['Sitting']) + asInt(durations['Standing'])) ~/ 60;
+    final restMinutes =
+        (asInt(durations['Sitting']) + asInt(durations['Standing'])) ~/ 60;
     final activityTotal = walkMinutes + runMinutes + restMinutes;
 
     return Scaffold(
@@ -146,7 +148,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         const SizedBox(height: 4),
                         Text(
                           'A good day to move, ${user.name.split(' ').first}.',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 19),
+                          style: Theme.of(context)
+                              .textTheme
+                              .titleLarge
+                              ?.copyWith(fontSize: 19),
                         ),
                       ],
                     ),
@@ -158,7 +163,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       shape: BoxShape.circle,
                       color: palette.surfaceRaised,
                     ),
-                    child: Icon(Icons.spa_outlined, color: palette.leaf, size: 21),
+                    child:
+                        Icon(Icons.spa_outlined, color: palette.leaf, size: 21),
                   ),
                 ],
               ),
@@ -175,7 +181,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     Row(
                       children: [
                         const Expanded(
-                          child: Eyebrow('YOUR DAILY RHYTHM', color: Color(0xFFCBDBD0)),
+                          child: Eyebrow('YOUR DAILY RHYTHM',
+                              color: Color(0xFFCBDBD0)),
                         ),
                         Icon(
                           Icons.directions_walk_rounded,
@@ -185,10 +192,20 @@ class _HomeScreenState extends State<HomeScreen> {
                       ],
                     ),
                     const SizedBox(height: 10),
-                    ProgressRing(steps: steps, goal: goal, available: stepAvailable),
+                    Semantics(
+                      label: !stepAvailable
+                          ? 'Daily step progress unavailable'
+                          : ' steps of  steps,  percent complete',
+                      child: ProgressRing(
+                        steps: steps,
+                        goal: goal,
+                        available: stepAvailable,
+                      ),
+                    ),
                     const SizedBox(height: 15),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 13, vertical: 9),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.09),
                         borderRadius: BorderRadius.circular(12),
@@ -197,9 +214,12 @@ class _HomeScreenState extends State<HomeScreen> {
                         !stepAvailable
                             ? 'Daily progress unavailable'
                             : steps >= goal
-                            ? 'You met today’s step intention.'
-                            : '${_formatCount((goal - steps).clamp(0, goal).toInt())} to your daily intention',
-                        style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                                ? 'You met today’s step intention.'
+                                : '${_formatCount((goal - steps).clamp(0, goal).toInt())} to your daily intention',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600),
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -208,16 +228,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           ? localSteps > 0
                               ? 'Phone total saved · waiting to reconnect'
                               : 'Step total unavailable · pull to retry'
-                          : widget.tracker.hasPendingSync
-                              ? 'Phone total · waiting to sync'
-                              : 'Synced with your BFit account',
-                      style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11),
+                          : widget.tracker.stepsStatus,
+                      style: TextStyle(
+                          color: Colors.white.withOpacity(0.7), fontSize: 11),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       'Earlier phone step history may not be recoverable in BFit.',
-                      style: TextStyle(color: Colors.white.withOpacity(0.58), fontSize: 10),
+                      style: TextStyle(
+                          color: Colors.white.withOpacity(0.58), fontSize: 10),
                       textAlign: TextAlign.center,
                     ),
                     if (_goals == null) ...[
@@ -225,37 +245,41 @@ class _HomeScreenState extends State<HomeScreen> {
                       Text(
                         'Saved goal unavailable · showing the 6,000-step starting point',
                         textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.white.withOpacity(0.72), fontSize: 10),
+                        style: TextStyle(
+                            color: Colors.white.withOpacity(0.72),
+                            fontSize: 10),
                       ),
                     ],
                   ],
                 ),
               ),
               if (_stepsError != null && localSteps == 0)
-              Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: SurfacePanel(
-                  padding: const EdgeInsets.fromLTRB(14, 11, 11, 11),
-                  borderRadius: 15,
-                  child: Row(
-                    children: [
-                      Icon(Icons.cloud_off_outlined, size: 18, color: palette.coral),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          _stepsError!,
-                          style: Theme.of(context).textTheme.bodySmall,
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: SurfacePanel(
+                    padding: const EdgeInsets.fromLTRB(14, 11, 11, 11),
+                    borderRadius: 15,
+                    child: Row(
+                      children: [
+                        Icon(Icons.cloud_off_outlined,
+                            size: 18, color: palette.coral),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            _stepsError!,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ),
-                      ),
-                      IconButton(
-                        tooltip: 'Retry step total',
-                        onPressed: _load,
-                        icon: Icon(Icons.refresh_rounded, color: palette.leaf),
-                      ),
-                    ],
+                        IconButton(
+                          tooltip: 'Retry step total',
+                          onPressed: _load,
+                          icon:
+                              Icon(Icons.refresh_rounded, color: palette.leaf),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
               const SizedBox(height: 18),
               Row(
                 children: [
@@ -304,7 +328,8 @@ class _HomeScreenState extends State<HomeScreen> {
                       width: 43,
                       height: 43,
                       decoration: BoxDecoration(
-                        color: _activityColor(reading.activity, palette).withOpacity(0.13),
+                        color: _activityColor(reading.activity, palette)
+                            .withOpacity(0.13),
                         borderRadius: BorderRadius.circular(14),
                       ),
                       child: Icon(
@@ -321,20 +346,28 @@ class _HomeScreenState extends State<HomeScreen> {
                             reading.activity == null
                                 ? 'Waiting for a reading'
                                 : displayActivityName(reading.activity),
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 17),
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontSize: 17),
                           ),
                           const SizedBox(height: 3),
                           Text(
                             reading.activity == null
-                                ? _activityError ?? widget.tracker.activityStatus
+                                ? _activityError ??
+                                    widget.tracker.activityStatus
                                 : freshness.note,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: palette.muted),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(color: palette.muted),
                           ),
                         ],
                       ),
                     ),
                     if (freshness.isStale)
-                      Icon(Icons.schedule_rounded, color: palette.muted, size: 18),
+                      Icon(Icons.schedule_rounded,
+                          color: palette.muted, size: 18),
                   ],
                 ),
               ),
@@ -366,7 +399,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.wb_sunny_outlined, color: palette.leaf, size: 20),
+                    Icon(Icons.wb_sunny_outlined,
+                        color: palette.leaf, size: 20),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -376,7 +410,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           const SizedBox(height: 7),
                           Text(
                             quoteForDate(DateTime.now()),
-                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 15),
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyLarge
+                                ?.copyWith(fontSize: 15),
                           ),
                         ],
                       ),
@@ -401,8 +438,29 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _todayLabel() {
-    const weekdays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY', 'SUNDAY'];
-    const months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
+    const weekdays = [
+      'MONDAY',
+      'TUESDAY',
+      'WEDNESDAY',
+      'THURSDAY',
+      'FRIDAY',
+      'SATURDAY',
+      'SUNDAY'
+    ];
+    const months = [
+      'JAN',
+      'FEB',
+      'MAR',
+      'APR',
+      'MAY',
+      'JUN',
+      'JUL',
+      'AUG',
+      'SEP',
+      'OCT',
+      'NOV',
+      'DEC'
+    ];
     final now = DateTime.now();
     return '${weekdays[now.weekday - 1]} · ${months[now.month - 1]} ${now.day}';
   }
@@ -447,14 +505,22 @@ class _MetricPanel extends StatelessWidget {
               textBaseline: TextBaseline.alphabetic,
               children: [
                 Flexible(
-                  child: Text(value, style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 25)),
+                  child: Text(value,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontSize: 25)),
                 ),
                 const SizedBox(width: 5),
                 Text(unit, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
             const SizedBox(height: 2),
-            Text(footer, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11)),
+            Text(footer,
+                style: Theme.of(context)
+                    .textTheme
+                    .bodySmall
+                    ?.copyWith(fontSize: 11)),
           ],
         ),
       );
@@ -490,11 +556,16 @@ class _MovementMix extends StatelessWidget {
               height: 9,
               child: Row(
                 children: total == 0
-                    ? [Expanded(child: ColoredBox(color: context.palette.surfaceRaised))]
+                    ? [
+                        Expanded(
+                            child: ColoredBox(
+                                color: context.palette.surfaceRaised))
+                      ]
                     : values.map((entry) {
                         final fraction = entry.$2 / total;
                         return Expanded(
-                          flex: (fraction * 1000).round().clamp(1, 1000).toInt(),
+                          flex:
+                              (fraction * 1000).round().clamp(1, 1000).toInt(),
                           child: ColoredBox(color: entry.$3),
                         );
                       }).toList(),
@@ -523,7 +594,10 @@ class _MovementMix extends StatelessWidget {
                     Expanded(
                       child: Text(
                         '${entry.$1}  ${minutes}m',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 12),
+                        style: Theme.of(context)
+                            .textTheme
+                            .bodySmall
+                            ?.copyWith(fontSize: 12),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
@@ -538,7 +612,8 @@ class _MovementMix extends StatelessWidget {
   }
 }
 
-Color _activityColor(String? activity, BFitPalette palette) => switch (activity) {
+Color _activityColor(String? activity, BFitPalette palette) =>
+    switch (activity) {
       'Walking' => palette.leaf,
       'Running' => palette.coral,
       'Standing' || 'Sitting' => palette.muted,

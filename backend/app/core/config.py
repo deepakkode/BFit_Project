@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = "postgresql+psycopg://postgres:postgres@localhost:5432/bfit"
     secret_key: str = "development-only-change-me"
-    access_token_expire_minutes: int = 30
+    access_token_expire_minutes: int = 43200
     activity_model: str = "auto"
     ml_artifact_path: str = "../ml/artifacts/random_forest.joblib"
     deepconv_lstm_artifact_path: str = "../ml/artifacts/deepconv_lstm.pt"

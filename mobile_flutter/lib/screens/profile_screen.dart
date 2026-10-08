@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../core/app_controller.dart';
 import '../core/palette.dart';
@@ -21,6 +22,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   ReminderSettings _reminder = const ReminderSettings(enabled: false, hour: 18, minute: 0);
   bool _reminderLoading = true;
   bool _reminderSaving = false;
+  bool _notificationPermissionDenied = false;
   String? _reminderError;
 
   @override
@@ -46,7 +48,14 @@ class _ProfileScreenState extends State<ProfileScreen>
   Future<void> _refreshReminderSchedule() async {
     try {
       await ReminderService.instance.initialize();
-      if (mounted) setState(() => _reminderError = null);
+      final settings = await ReminderService.instance.readSettings();
+      if (mounted) {
+        setState(() {
+          _reminder = settings;
+          _reminderError = null;
+          _notificationPermissionDenied = false;
+        });
+      }
     } catch (error) {
       if (mounted) {
         setState(() => _reminderError =
@@ -75,6 +84,7 @@ class _ProfileScreenState extends State<ProfileScreen>
     setState(() {
       _reminderSaving = true;
       _reminderError = null;
+      _notificationPermissionDenied = false;
       _reminder = ReminderSettings(
         enabled: enabled,
         hour: hour ?? previous.hour,
@@ -92,10 +102,20 @@ class _ProfileScreenState extends State<ProfileScreen>
         setState(() {
           _reminder = previous;
           _reminderError = error.toString().replaceFirst('Bad state: ', '');
+          _notificationPermissionDenied =
+              error is NotificationPermissionException;
         });
       }
     } finally {
       if (mounted) setState(() => _reminderSaving = false);
+    }
+  }
+
+  Future<void> _openNotificationSettings() async {
+    final opened = await openAppSettings();
+    if (!opened && mounted) {
+      setState(() => _reminderError =
+          'Could not open Android settings. Open Settings → Apps → BFit → Notifications and allow notifications.');
     }
   }
 
@@ -255,6 +275,17 @@ class _ProfileScreenState extends State<ProfileScreen>
             if (_reminderError != null) ...[
               const SizedBox(height: 8),
               Text(_reminderError!, style: TextStyle(color: palette.coral, height: 1.4)),
+              if (_notificationPermissionDenied) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _openNotificationSettings,
+                    icon: const Icon(Icons.settings_outlined),
+                    label: const Text('Open notification settings'),
+                  ),
+                ),
+              ],
             ],
             const SizedBox(height: 9),
             Text(

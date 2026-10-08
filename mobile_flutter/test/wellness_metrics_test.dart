@@ -25,6 +25,18 @@ void main() {
       expect(result.caloriesKcal, 245.7);
     });
 
+    test('provides a varied set of fitness-focused daily quotes', () {
+      expect(motivationalQuotes.length, greaterThanOrEqualTo(30));
+      expect(motivationalQuotes.toSet(), hasLength(motivationalQuotes.length));
+      expect(
+        List.generate(
+          motivationalQuotes.length,
+          (day) => quoteForDate(DateTime.utc(2026, 1, 1 + day)),
+        ).toSet(),
+        hasLength(motivationalQuotes.length),
+      );
+    });
+
     test('uses a neutral estimate when profile values are absent', () {
       final result = estimateWalkingMetrics(-100, null);
 
@@ -34,7 +46,8 @@ void main() {
   });
 
   group('personal step goals', () {
-    test('uses a gradual profile-adjusted starter before three tracked days', () {
+    test('uses a gradual profile-adjusted starter before three tracked days',
+        () {
       final result = recommendStepGoal(
         [
           StepDay(logDate: DateTime.utc(2026, 10, 5), steps: 4000),
@@ -59,7 +72,8 @@ void main() {
         (DateTime.utc(2026, 10, 6), 20000),
       ].map((item) => StepDay(logDate: item.$1, steps: item.$2)).toList();
 
-      final result = recommendStepGoal(days, DateTime.utc(2026, 10, 6, 12), null);
+      final result =
+          recommendStepGoal(days, DateTime.utc(2026, 10, 6, 12), null);
 
       expect(result.averageSteps, 8600);
       expect(result.dailyStepGoal, 9500);
@@ -94,7 +108,45 @@ void main() {
       expect(adjusted.dailyStepGoal, isNot(starterDailyStepGoal));
     });
 
-    test('profile recommendation preserves the existing weekly and monthly goals', () {
+    test(
+        'changes the suggested goal in smaller increments for different profiles',
+        () {
+      final activeYoungAdult = recommendStepGoal(
+        const [],
+        DateTime.utc(2026, 10, 6),
+        const UserProfile(
+          id: 'u1',
+          name: 'Ari',
+          email: 'ari@example.com',
+          age: 22,
+          heightCm: 190,
+          weightKg: 70,
+          gender: 'Male',
+        ),
+      );
+      final olderAdult = recommendStepGoal(
+        const [],
+        DateTime.utc(2026, 10, 6),
+        const UserProfile(
+          id: 'u2',
+          name: 'Sam',
+          email: 'sam@example.com',
+          age: 70,
+          heightCm: 150,
+          weightKg: 90,
+          gender: 'Female',
+        ),
+      );
+
+      expect(activeYoungAdult.dailyStepGoal,
+          greaterThan(olderAdult.dailyStepGoal));
+      expect(activeYoungAdult.dailyStepGoal % 100, 0);
+      expect(olderAdult.dailyStepGoal % 100, 0);
+    });
+
+    test(
+        'profile recommendation preserves the existing weekly and monthly goals',
+        () {
       const existing = GoalSettings(
         dailySteps: 8000,
         weeklyRuns: 5,
@@ -145,7 +197,9 @@ void main() {
     group('local reminder scheduling', () {
       setUpAll(() => tzdata.initializeTimeZones());
 
-      test('uses the next local calendar time, including after a time has passed', () {
+      test(
+          'uses the next local calendar time, including after a time has passed',
+          () {
         tz.setLocalLocation(tz.getLocation('America/New_York'));
         final beforeSelectedTime = tz.TZDateTime(tz.local, 2026, 3, 7, 9);
         final laterToday = nextLocalReminder(
@@ -171,7 +225,8 @@ void main() {
       });
     });
 
-    test('retries an already journaled absolute total without double counting', () {
+    test('retries an already journaled absolute total without double counting',
+        () {
       const localSteps = 5200;
       final retryAfterSuccessfulUpload = reconcileStepTotal(
         localSteps: localSteps,
@@ -182,7 +237,8 @@ void main() {
       expect(retryAfterSuccessfulUpload, localSteps);
     });
 
-    test('keeps a higher server total when another client advanced the day', () {
+    test('keeps a higher server total when another client advanced the day',
+        () {
       expect(
         reconcileStepTotal(
           localSteps: 5200,
@@ -233,7 +289,8 @@ void main() {
       );
     });
 
-    test('does not assign an ambiguous counter delta across a UTC boundary', () {
+    test('does not assign an ambiguous counter delta across a UTC boundary',
+        () {
       expect(canApplyStepDeltaAcrossDates('2026-10-06', '2026-10-07'), isFalse);
       expect(canApplyStepDeltaAcrossDates('2026-10-07', '2026-10-07'), isTrue);
     });

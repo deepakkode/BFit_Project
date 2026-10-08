@@ -27,9 +27,10 @@ Interactive API docs are at `/docs`, OpenAPI JSON at `/openapi.json`, and health
 
 ## Product Behavior
 
-- Daily step goals start from a gradual profile-adjusted 6,000-step baseline using age, height, weight, and gender when provided. After at least three positive step-history days in the last week, BFit suggests 110% of the recent average, adjusted for profile, rounded to the nearest 500, and clamped between 3,000 and 12,000. The suggestion is editable in Goals.
+- Daily step goals start from a gradual profile-adjusted 6,000-step baseline using age, height, weight, and gender when provided. After at least three positive step-history days in the last week, BFit suggests 110% of the recent average, adjusted for profile, rounded to the nearest 100, and clamped between 3,000 and 12,000. The suggestion is editable in Goals.
 - Distance and calories are rough walking estimates from steps, height, and weight. They are not medical or clinical measurements.
-- Motivational quotes rotate on app launch and foreground return. Daily movement reminders are optional local notifications; they require user permission and a native mobile runtime.
+- Fitness-focused motivational quotes rotate daily. Daily movement reminders are optional local notifications; they require user permission and a native mobile runtime.
+- Backend access tokens expire 30 days after sign-in by default (`ACCESS_TOKEN_EXPIRE_MINUTES=43200`). Existing tokens keep their original expiry; a backend deployment and a fresh sign-in are needed for this duration to apply. This is a bounded remember-login period, not a non-expiring session.
 - For phone testing, use `npm run start:lan`, point `EXPO_PUBLIC_API_URL` to this PC's current Wi-Fi IPv4, and reload using the newly printed Expo QR code after changing that address. Production builds must use a deployed HTTPS API URL.
 
 Run the mobile logic tests with `cd mobile && npm test`. Run backend tests with `cd backend && python -m pytest tests -q` after activating the backend environment.

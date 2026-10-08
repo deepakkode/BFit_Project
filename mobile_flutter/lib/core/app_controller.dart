@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_client.dart';
 import 'models.dart';
 import 'wellness_metrics.dart';
+import '../services/background_step_tracking.dart';
 
 class AppController extends ChangeNotifier {
   AppController({BFitApi? api})
@@ -35,6 +36,7 @@ class AppController extends ChangeNotifier {
       try {
         user = await api.profile();
       } on ApiException {
+        await BackgroundStepTracking.stop();
         await _storage.delete(key: _tokenKey);
         api.token = null;
       }
@@ -70,7 +72,8 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> _saveSession(String token) async {
-    if (token.isEmpty) throw const ApiException('Sign-in did not return a secure session.');
+    if (token.isEmpty)
+      throw const ApiException('Sign-in did not return a secure session.');
     await _storage.write(key: _tokenKey, value: token);
     api.token = token;
     try {
@@ -109,7 +112,8 @@ class AppController extends ChangeNotifier {
       try {
         existingGoals = await api.goals();
       } catch (error) {
-        outcome = 'Your profile is saved, but the daily goal could not be refreshed. '
+        outcome =
+            'Your profile is saved, but the daily goal could not be refreshed. '
             'Weekly runs and monthly distance were left unchanged. ${_errorMessage(error)}';
       }
 
@@ -137,7 +141,8 @@ class AppController extends ChangeNotifier {
               : 'Your profile and daily goal are updated. '
                   'Weekly runs and monthly distance are unchanged.';
         } catch (error) {
-          outcome = 'Your profile is saved, but the daily goal could not be refreshed. '
+          outcome =
+              'Your profile is saved, but the daily goal could not be refreshed. '
               'Weekly runs and monthly distance were left unchanged. ${_errorMessage(error)}';
         }
       }
@@ -151,8 +156,9 @@ class AppController extends ChangeNotifier {
     return outcome;
   }
 
-  static String _errorMessage(Object error) =>
-      error is ApiException ? error.message : 'Check your connection and try again.';
+  static String _errorMessage(Object error) => error is ApiException
+      ? error.message
+      : 'Check your connection and try again.';
 
   Future<GoalSettings> saveGoals(GoalSettings goals) =>
       _persistGoals(goals, notify: true);
@@ -168,6 +174,7 @@ class AppController extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    await BackgroundStepTracking.stop();
     user = null;
     api.token = null;
     await _storage.delete(key: _tokenKey);
@@ -176,6 +183,7 @@ class AppController extends ChangeNotifier {
 
   void expireSession() {
     if (user == null) return;
+    unawaited(BackgroundStepTracking.stop());
     user = null;
     api.token = null;
     unawaited(_storage.delete(key: _tokenKey));
